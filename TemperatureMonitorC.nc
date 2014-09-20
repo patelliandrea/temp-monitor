@@ -73,6 +73,7 @@ implementation {
 				busy = TRUE;
 			} else {
 				// error, send request again
+				dbg("default", "trying again to send request to node");
 				post sendRequestToNode();
 			}
 		}
@@ -94,7 +95,7 @@ implementation {
 			busy = TRUE;
 			return SUCCESS;
 		} else {
-			dbg("error", "Error in sending average to sink");
+			dbg("debug", "Error in sending average to sink");
 			return FAIL;
 		}
 	}
@@ -109,7 +110,7 @@ implementation {
 			busy = TRUE;
 			return SUCCESS;
 		} else {
-			dbg("error", "Error in sending not ready message to sink");
+			dbg("debug", "Error in sending not ready message to sink");
 			return FAIL;
 		}
 	}
@@ -130,23 +131,6 @@ implementation {
 					result = sendNotReadyToSink();
 				}
 			}
-		}
-	}
-
-	void averageRequestHandler(uint16_t idNode) {
-		// if request to single sensor
-		if(idNode == TOS_NODE_ID) {
-			if(call WaitTimer.isRunning()) {
-				call WaitTimer.stop();
-			}
-			// reply
-			sendMessage();
-		} else if(idNode == TOS_BCAST_ADDR) {
-			// if broadcast, compute random delay and reply when WaitTimer.fired()
-			uint16_t delay = call Random.rand16() % 200;
-			call WaitTimer.startOneShot(delay);
-		} else {
-			//
 		}
 	}
 
@@ -196,7 +180,7 @@ implementation {
 				checkReady();
 			}
 		} else {
-			dbg("error", "error in readDone");
+			dbg("debug", "error in readDone");
 			// error
 		}
 	}
@@ -207,7 +191,7 @@ implementation {
 			busy = FALSE;
 		}
 		if(err != SUCCESS) {
-			dbg("error", "error in sendDone");
+			dbg("debug", "error in sendDone");
 			// error
 		}
 	}
@@ -216,6 +200,7 @@ implementation {
 	event message_t* Receive.receive(message_t *msg, void *payload, uint8_t len) {
 		am_addr_t sourceAddress;
 		uint32_t average;
+		uint16_t node;
 
 		if(len == sizeof(NotReadyMessage) && isSinkNode()) {
 			// the queried sensor is not ready
@@ -233,7 +218,22 @@ implementation {
 			AverageRequestMessage *message = (AverageRequestMessage *) payload;
 			sourceAddress = call AMPacket.source(msg);
 			request = message->idRequest;
-			averageRequestHandler(message->idNode);
+
+			node = message->idNode;
+			// if request to single sensor
+			if(node == TOS_NODE_ID) {
+				if(call WaitTimer.isRunning()) {
+					call WaitTimer.stop();
+				}
+				// reply
+				sendMessage();
+			} else if(node == TOS_BCAST_ADDR) {
+				// if broadcast, compute random delay and reply when WaitTimer.fired()
+				uint16_t delay = call Random.rand16() % 200;
+				call WaitTimer.startOneShot(delay);
+			} else {
+				//
+			}
 		}
 		return msg;
 	}

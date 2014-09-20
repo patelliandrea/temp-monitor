@@ -2,7 +2,7 @@
 
 N_MOTES = 4
 DBG_CHANNELS = "default error"
-SIM_TIME = 100
+SIM_TIME = 1000
 TOPO_FILE = "linkgain.out"
 #NOISE_FILE = "/opt/tinyos-2.1.0/tos/lib/tossim/noise/casino-lab.txt"
 NOISE_FILE = "/Users/patelliandrea/Desktop/tinyos-2.x-master/tos/lib/tossim/noise/meyer-heavy.txt"

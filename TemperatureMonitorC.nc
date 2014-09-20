@@ -15,13 +15,13 @@ module TemperatureMonitorC {
 }
 
 implementation {
-	uint16_t lastValues[LAST_READS];
-	uint8_t readsCount = 0;
-	bool ready = FALSE;
-	bool busy = FALSE;
+	uint16_t lastValues[LAST_READS];	// last (6) reads
+	uint8_t readsCount = 0;	// read count, 0, 1, 2, 3, 4, 5, 6, 0 , ...
+	bool ready = FALSE;	// TRUE if the sensor has read 6 values
+	bool busy = FALSE;	// TRUE if the sensor is sending a message
 	message_t packet;
-	uint16_t idRequest = 0;
-	uint16_t request;
+	uint16_t idRequest = 0; // id of the request the sink is making
+	uint16_t request;	// id of the request received by the sensor
 
 	float avg() {
 		float sum = 0;
@@ -36,6 +36,7 @@ implementation {
 		return TOS_NODE_ID == 0;
 	}
 
+	// if readsCount == 0 then the sensor has read 6 values
 	void checkReady() {
 		if(readsCount == 0) {
 			ready = TRUE;
@@ -49,20 +50,24 @@ implementation {
 		// single sensor or broadcast, 33% broadcast, 66% single sensor
 		uint16_t randomN = call Random.rand16() % 3;
 		if(randomN == 0) {
+			dbg("default", "request %d | broadcast\n", idRequest);
 			// return broadcast address
 			return TOS_BCAST_ADDR;
 		} else {
 			// return random sensor id
 			uint16_t idNode = (call Random.rand16() % (MOTES - 1)) + 1;
+			dbg("default", "request %d | node %d\n", idRequest, idNode);
 			return idNode;
 		}
 	}
 
+	// request made by the sink
 	task void sendRequestToNode() {
 		if(!busy) {
 			AverageRequestMessage *message = (AverageRequestMessage *)(call Packet.getPayload(&packet, sizeof(AverageRequestMessage)));
-			message->idNode = chooseRandomSensor();
-			message->idRequest = idRequest;
+			message->idNode = chooseRandomSensor();	// address of the sensor
+			message->idRequest = idRequest;	// id of the request (for debugging purposes)
+			// if the request is succesfully sent, increase id Request, busy until sendDone
 			if(call AMSend.send(AM_BROADCAST_ADDR, &packet, sizeof(AverageRequestMessage)) == SUCCESS) {
 				idRequest++;
 				busy = TRUE;
@@ -79,14 +84,17 @@ implementation {
 		if(message == NULL) {
 			return FAIL;
 		}
+		// compute the average
 		*(float*)&average = avg();
 		dbg("default", "request %d | sending %f\n", request, *(float*)&average);
 		message->average = average;
 		message->idRequest = request;
+		// try to send the message, busy until sendDone
 		if(call AMSend.send(AM_BROADCAST_ADDR, &packet, sizeof(AverageMessage)) == SUCCESS) {
 			busy = TRUE;
 			return SUCCESS;
 		} else {
+			dbg("error", "Error in sending average to sink");
 			return FAIL;
 		}
 	}
@@ -101,15 +109,18 @@ implementation {
 			busy = TRUE;
 			return SUCCESS;
 		} else {
+			dbg("error", "Error in sending not ready message to sink");
 			return FAIL;
 		}
 	}
 
+	// if the sensor is ready, sendAverageToSink, if not ready sendNotReadyToSink()
 	void sendMessage() {
 		if(!busy) {
 			error_t result;
 			if(ready) {
 				result = sendAverageToSink();
+				// try to send the message until it is successfully sent
 				while(result != SUCCESS) {
 					result = sendAverageToSink();
 				}
@@ -123,13 +134,19 @@ implementation {
 	}
 
 	void averageRequestHandler(uint16_t idNode) {
+		// if request to single sensor
 		if(idNode == TOS_NODE_ID) {
+			if(call WaitTimer.isRunning()) {
+				call WaitTimer.stop();
+			}
+			// reply
 			sendMessage();
 		} else if(idNode == TOS_BCAST_ADDR) {
+			// if broadcast, compute random delay and reply when WaitTimer.fired()
 			uint16_t delay = call Random.rand16() % 200;
 			call WaitTimer.startOneShot(delay);
 		} else {
-			//error
+			//
 		}
 	}
 
@@ -154,10 +171,12 @@ implementation {
 
 	event void AMControl.stopDone(error_t err) {}
 
+	// every 5 second, read the temperature
 	event void NodeTimer.fired() {
 		call RawRead.read();
 	}
 
+	// after the random delay, sendMessage
 	event void WaitTimer.fired() {
 		sendMessage();
 	}
@@ -177,27 +196,32 @@ implementation {
 				checkReady();
 			}
 		} else {
+			dbg("error", "error in readDone");
 			// error
 		}
 	}
 
+	// the message was successfully sent, busy = FALSE
 	event void AMSend.sendDone(message_t *msg, error_t err) {
 		if(&packet == msg) {
 			busy = FALSE;
 		}
 		if(err != SUCCESS) {
+			dbg("error", "error in sendDone");
 			// error
 		}
 	}
 
+	// when a node receive a message
 	event message_t* Receive.receive(message_t *msg, void *payload, uint8_t len) {
 		am_addr_t sourceAddress;
 		uint32_t average;
+
 		if(len == sizeof(NotReadyMessage) && isSinkNode()) {
 			// the queried sensor is not ready
 			NotReadyMessage *message = (NotReadyMessage *) payload;
 			sourceAddress = call AMPacket.source(msg);
-				dbg("default", "request %d failed | node %d | not ready\n", message->idRequest, sourceAddress);
+			dbg("default", "request %d failed | node %d | not ready\n", message->idRequest, sourceAddress);
 		} else if(len == sizeof(AverageMessage) && isSinkNode()) {
 			// the queried sensor responded with the average temperature
 			AverageMessage *message = (AverageMessage *) payload;

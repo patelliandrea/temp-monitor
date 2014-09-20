@@ -2,7 +2,7 @@
 #define TEMPMONITOR_H
 
 enum {
-	MOTES = 10,
+	MOTES = 4,
 	LAST_READS = 6,
 	READ_PERIOD = 5120,
 	SINK_PERIOD = 10240
